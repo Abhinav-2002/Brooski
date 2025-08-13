@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "457509644539",
+    "project_id": "brooskiapp",
+    "storage_bucket": "brooskiapp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:457509644539:android:a00144ac1607f65bf8685e",
+        "android_client_info": {
+          "package_name": "com.example.brooski_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAqcDckgBdtzh5z_BpRysCOf7y7bRALn8g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
