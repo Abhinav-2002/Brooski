@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:brooski_app/features/screens/choose_role/choose_role_screen.dart';
 import 'package:brooski_app/features/screens/auth/auth_screen.dart';
-import 'package:brooski_app/features/screens/PosterSignupScreen/PosterSignupScreen.dart';
+import 'package:brooski_app/features/screens/poster_signup_screen/poster_signup_screen.dart';
 import 'package:brooski_app/features/auth/screens/worker_signup_screen.dart';
 import 'package:brooski_app/features/worker/screens/worker_dashboard_screen.dart';
 

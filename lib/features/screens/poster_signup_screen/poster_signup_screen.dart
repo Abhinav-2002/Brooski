@@ -1,8 +1,8 @@
-import 'package:brooski_app/core/models/poster_signup_model.dart';
-import 'package:brooski_app/features/onboarding/widgets/poster_step_2_personalize.dart';
-import 'package:brooski_app/features/onboarding/widgets/poster_step_4_final_review.dart';
-import 'package:brooski_app/features/onboarding/widgets/step_1_personal_info.dart';
-import 'package:brooski_app/features/onboarding/widgets/step_3_kyc.dart';
+import 'package:brooski_app/features/models/poster_signup_model.dart';
+import 'package:brooski_app/features/screens/poster_signup_screen/steps/step_2_personalize.dart';
+import 'package:brooski_app/features/screens/poster_signup_screen/steps/step_4_final_review.dart';
+import 'package:brooski_app/features/screens/shared/step_1_personal_info.dart';
+import 'package:brooski_app/features/screens/shared/step_3_kyc.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -24,9 +24,7 @@ class _PosterSignupScreenState extends State<PosterSignupScreen> {
   @override
   void initState() {
     super.initState();
-    // Form keys for Step 1 (Personal Info) and Step 3 (KYC)
-    // Step 2 (Personalize) and Step 4 (Review) do not use form keys from this list.
-    _formKeys = List.generate(3, (index) => GlobalKey<FormState>()); 
+    _formKeys = List.generate(3, (index) => GlobalKey<FormState>());
     _steps = [
       SignupStep1PersonalInfo(formKey: _formKeys[0], data: _signupData),
       PosterSignupStep2(
@@ -37,7 +35,7 @@ class _PosterSignupScreenState extends State<PosterSignupScreen> {
         },
         selectedCategories: _signupData.selectedCategories,
       ),
-      SignupStep3Kyc(formKey: _formKeys[2], data: _signupData), // Uses _formKeys[2]
+      SignupStep3Kyc(formKey: _formKeys[2], data: _signupData),
       PosterSignupStep4(data: _signupData),
     ];
   }
@@ -54,31 +52,17 @@ class _PosterSignupScreenState extends State<PosterSignupScreen> {
       return;
     }
 
-    // Determine the correct form key index based on the current step
-    // Step 0 (Personal Info) uses _formKeys[0]
-    // Step 1 (Personalize) has no form key in _formKeys, validation is skipped
-    // Step 2 (KYC) uses _formKeys[2]
-    bool shouldValidate = true;
-    GlobalKey<FormState>? currentFormKey;
-
-    if (_currentStep == 0) {
-      currentFormKey = _formKeys[0];
-    } else if (_currentStep == 1) { // Personalization step, no form key from _formKeys
-      shouldValidate = false;
-    } else if (_currentStep == 2) { // KYC step
-      currentFormKey = _formKeys[2];
+    // Skip validation for the personalization step (index 1)
+    if (_currentStep == 1) {
+      _pageController.nextPage(
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+      );
+      return;
     }
 
-    if (shouldValidate) {
-      if (currentFormKey != null && currentFormKey.currentState!.validate()) {
-        currentFormKey.currentState!.save();
-        _pageController.nextPage(
-          duration: const Duration(milliseconds: 400),
-          curve: Curves.easeInOut,
-        );
-      } 
-    } else {
-      // For steps without validation or with custom validation handled elsewhere
+    if (_formKeys[_currentStep].currentState!.validate()) {
+      _formKeys[_currentStep].currentState!.save();
       _pageController.nextPage(
         duration: const Duration(milliseconds: 400),
         curve: Curves.easeInOut,
