@@ -4,7 +4,6 @@ import 'package:brooski_app/features/onboarding/widgets/worker_step_2_role_info.
 import 'package:brooski_app/features/onboarding/widgets/step_3_kyc.dart';
 import 'package:brooski_app/features/onboarding/widgets/step_4_emergency_contact.dart';
 import 'package:brooski_app/features/onboarding/widgets/worker_step_5_final_review.dart';
-import 'package:brooski_app/features/worker/screens/worker_dashboard_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -134,10 +133,10 @@ class _WorkerSignupScreenState extends State<WorkerSignupScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  LinearProgressIndicator(
+ LinearProgressIndicator(
                     value: (_currentStep + 1) / _steps.length,
                     minHeight: 7,
-                    backgroundColor: primaryGreen.withOpacity(0.2),
+                    backgroundColor: primaryGreen.withAlpha(51), // Approx 0.2 opacity
                     valueColor: AlwaysStoppedAnimation<Color>(primaryGreen),
                     borderRadius: BorderRadius.circular(12),
                   ),

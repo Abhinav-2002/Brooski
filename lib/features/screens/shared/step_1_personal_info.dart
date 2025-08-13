@@ -15,7 +15,7 @@ class SignupStep1PersonalInfo extends StatefulWidget {
 
 class _SignupStep1PersonalInfoState extends State<SignupStep1PersonalInfo> with SingleTickerProviderStateMixin {
   late AnimationController _animController;
-  late Animation<double> _fadeAnim, _slideAnim;
+  late Animation<double> _fadeAnim;
   final Color primaryGreen = const Color(0xFF2ECC71);
 
   final TextEditingController _dobController = TextEditingController();
@@ -30,8 +30,7 @@ class _SignupStep1PersonalInfoState extends State<SignupStep1PersonalInfo> with 
       vsync: this,
       duration: const Duration(milliseconds: 700),
     );
-    _fadeAnim = CurvedAnimation(parent: _animController, curve: Curves.easeIn);
-    _slideAnim =
+    _fadeAnim =
         Tween<double>(begin: 30, end: 0).animate(CurvedAnimation(parent: _animController, curve: Curves.easeOut));
     _animController.forward();
   }
@@ -135,7 +134,7 @@ class _SignupStep1PersonalInfoState extends State<SignupStep1PersonalInfo> with 
       contentPadding: const EdgeInsets.symmetric(vertical: 15, horizontal: 16),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: primaryGreen.withOpacity(0.4)),
+        borderSide: BorderSide(color: primaryGreen.withAlpha(102)), // Equivalent to 0.4 opacity
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
@@ -144,7 +143,7 @@ class _SignupStep1PersonalInfoState extends State<SignupStep1PersonalInfo> with 
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
       ),
-      fillColor: primaryGreen.withOpacity(0.05),
+      fillColor: primaryGreen.withAlpha(13), // Equivalent to 0.05 opacity
       filled: true,
     );
   }

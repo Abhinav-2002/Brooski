@@ -15,7 +15,6 @@ class Step1PersonalInfo extends StatefulWidget {
 
 class _Step1PersonalInfoState extends State<Step1PersonalInfo> with SingleTickerProviderStateMixin {
   late AnimationController _animController;
-  late Animation<double> _fadeAnim, _slideAnim;
   final Color primaryGreen = const Color(0xFF2ECC71);
 
   final TextEditingController _dobController = TextEditingController();
@@ -30,9 +29,6 @@ class _Step1PersonalInfoState extends State<Step1PersonalInfo> with SingleTicker
       vsync: this,
       duration: const Duration(milliseconds: 700),
     );
-    _fadeAnim = CurvedAnimation(parent: _animController, curve: Curves.easeIn);
-    _slideAnim =
-        Tween<double>(begin: 30, end: 0).animate(CurvedAnimation(parent: _animController, curve: Curves.easeOut));
     _animController.forward();
   }
 

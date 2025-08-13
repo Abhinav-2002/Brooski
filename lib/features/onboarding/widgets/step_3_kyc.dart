@@ -152,12 +152,12 @@ class _Step3KycState extends State<Step3Kyc> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: primaryGreen, width: 2),
+ borderSide: BorderSide(color: primaryGreen.withAlpha(102)), // Approx 0.4 opacity
       ),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
       ),
-      fillColor: primaryGreen.withOpacity(0.05),
+ fillColor: primaryGreen.withAlpha(12), // Approx 0.05 opacity
       filled: true,
     );
   }

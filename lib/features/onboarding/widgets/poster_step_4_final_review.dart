@@ -1,4 +1,4 @@
-import 'package:brooski_app/core/models/poster_signup_model.dart';
+import 'package:brooski_app/features/models/poster_signup_model.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -64,7 +64,7 @@ class PosterSignupStep4 extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       elevation: 2,
-      shadowColor: primaryGreen.withOpacity(0.2),
+      shadowColor: primaryGreen.withAlpha(51), // Approx 0.2 opacity
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ExpansionTile(
         initiallyExpanded: true,

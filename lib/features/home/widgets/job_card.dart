@@ -9,14 +9,14 @@ class JobCard extends StatefulWidget {
   final bool isSelected;
   final Function(Job) onAccept;
 
-  const JobCard({Key? key, required this.job, required this.isSelected, required this.onAccept}) : super(key: key);
+  const JobCard({super.key, required this.job, required this.isSelected, required this.onAccept});
 
   @override
   State<JobCard> createState() => _JobCardState();
 }
 
 class _JobCardState extends State<JobCard> {
-  bool _isExpanded = false;
+  final bool _isExpanded = false;
 
   IconData _getCategoryIcon(String category) {
     switch (category.toLowerCase()) {
@@ -319,7 +319,7 @@ class _JobCardState extends State<JobCard> {
         Expanded(
           child: ElevatedButton(
             onPressed: () => print('Negotiate & Chat Tapped'),
-            style: ElevatedButton.styleFrom(
+            style: ElevatedButton.styleFrom( // Consider replacing with a custom style or theme
               backgroundColor: Colors.white,
               foregroundColor: const Color(0xFF2ECC71),
               side: const BorderSide(color: Color(0xFF2ECC71), width: 1.5),
@@ -333,7 +333,7 @@ class _JobCardState extends State<JobCard> {
         Expanded(
           child: ElevatedButton(
             onPressed: () => widget.onAccept(widget.job),
-            style: ElevatedButton.styleFrom(
+            style: ElevatedButton.styleFrom( // Consider replacing with a custom style or theme
               backgroundColor: const Color(0xFF2ECC71),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 14),

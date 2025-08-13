@@ -5,7 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 class PosterProfileScreen extends StatelessWidget {
   final Poster poster;
 
-  const PosterProfileScreen({Key? key, required this.poster}) : super(key: key);
+  const PosterProfileScreen({super.key, required this.poster});
 
   @override
   Widget build(BuildContext context) {

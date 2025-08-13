@@ -7,10 +7,10 @@ class FilterBottomSheet extends StatefulWidget {
   final Function(FilterModel) onApply;
 
   const FilterBottomSheet({
-    Key? key,
+    super.key,
     required this.initialFilters,
     required this.onApply,
-  }) : super(key: key);
+  });
 
   @override
   _FilterBottomSheetState createState() => _FilterBottomSheetState();
@@ -29,7 +29,6 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
   @override
   void initState() {
     super.initState();
-    // Initialize state from the passed model
     _priceRange = widget.initialFilters.priceRange;
     _distance = widget.initialFilters.distance;
     _showUrgentOnly = widget.initialFilters.showUrgentOnly;
@@ -154,7 +153,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                         }
                       });
                     },
-                    selectedColor: const Color(0xFF2ECC71).withOpacity(0.2),
+                    selectedColor: const Color(0xFF2ECC71).withAlpha(51),
                     checkmarkColor: const Color(0xFF2ECC71),
                   );
                 }).toList(),
@@ -241,7 +240,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
               });
             }
           },
-          selectedColor: const Color(0xFF2ECC71).withOpacity(0.2),
+          selectedColor: const Color(0xFF2ECC71).withAlpha(51),
         );
       }).toList(),
     );
@@ -261,7 +260,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
               });
             }
           },
-          selectedColor: const Color(0xFF2ECC71).withOpacity(0.2),
+          selectedColor: const Color(0xFF2ECC71).withAlpha(51),
         );
       }).toList(),
     );
@@ -283,8 +282,8 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                 _selectedSubCategories.clear();
               });
             },
-            child: const Text('Reset'),
             style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
+            child: const Text('Reset'),
           ),
         ),
         const SizedBox(width: 16),
@@ -303,12 +302,12 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
               );
               widget.onApply(newFilters);
             },
-            child: const Text('Apply Filters'),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF2ECC71),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 16),
             ),
+            child: const Text('Apply Filters'),
           ),
         ),
       ],

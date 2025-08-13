@@ -12,11 +12,11 @@ class PriceMarkerWidget extends StatelessWidget {
   final bool isUrgent;
 
   const PriceMarkerWidget({
-    Key? key,
+    super.key,
     required this.price,
     required this.category,
     this.isUrgent = false,
-  }) : super(key: key);
+  });
 
   IconData _getCategoryIcon(String category) {
     switch (category.toLowerCase()) {
@@ -36,7 +36,7 @@ class PriceMarkerWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Color borderColor = isUrgent ? const Color(0xFFD32F2F) : const Color(0xFF388E3C);
-
+    final Color primaryGreen = const Color(0xFF2ECC71); // Define primaryGreen here if needed elsewhere, otherwise remove
     return SizedBox(
       width: 100,
       height: 50,
@@ -55,7 +55,7 @@ class PriceMarkerWidget extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: borderColor, width: 2.5),
                 boxShadow: [
-                  BoxShadow(
+                  BoxShadow( // Consider replacing with a specific elevation for consistent shadow appearance
                     color: Colors.black.withOpacity(0.25),
                     blurRadius: 4,
                     offset: const Offset(0, 2),

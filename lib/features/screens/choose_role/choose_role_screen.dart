@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class ChooseRoleScreen extends StatefulWidget {
-  const ChooseRoleScreen({Key? key}) : super(key: key);
+  const ChooseRoleScreen({super.key});
 
   @override
   State<ChooseRoleScreen> createState() => _ChooseRoleScreenState();

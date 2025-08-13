@@ -1,14 +1,13 @@
 import 'package:brooski_app/features/models/poster_signup_model.dart';
-import 'package:brooski_app/features/screens/posterSignupScreen/steps/step_2_personalize.dart';
-import 'package:brooski_app/features/screens/posterSignupScreen/steps/step_4_final_review.dart';
-import 'package:brooski_app/features/screens/shared/step_1_personal_info.dart';
-import 'package:brooski_app/features/screens/shared/step_3_kyc.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:brooski_app/features/screens/shared/step_1_personal_info.dart';
+import 'package:brooski_app/features/onboarding/widgets/poster_step_2_personalize.dart';
+import 'package:brooski_app/features/screens/shared/step_3_kyc.dart';
+import 'package:brooski_app/features/onboarding/widgets/poster_step_4_final_review.dart';
 
 class PosterSignupScreen extends StatefulWidget {
   const PosterSignupScreen({super.key});
-
   @override
   State<PosterSignupScreen> createState() => _PosterSignupScreenState();
 }
@@ -24,21 +23,20 @@ class _PosterSignupScreenState extends State<PosterSignupScreen> {
   @override
   void initState() {
     super.initState();
-    _formKeys = List.generate(3, (index) => GlobalKey<FormState>());
-    _steps = [
+    _formKeys = List.generate(
+        4, (index) => GlobalKey<FormState>()); // Initialize with a fixed size
+    _steps = <Widget>[
       SignupStep1PersonalInfo(formKey: _formKeys[0], data: _signupData),
       PosterSignupStep2(
         onUpdate: (categories) {
-          setState(() {
-            _signupData.selectedCategories = categories;
-          });
-        },
+          setState(() { _signupData.selectedCategories = categories; });},
         selectedCategories: _signupData.selectedCategories,
       ),
       SignupStep3Kyc(formKey: _formKeys[2], data: _signupData),
       PosterSignupStep4(data: _signupData),
     ];
   }
+
 
   @override
   void dispose() {
@@ -83,18 +81,6 @@ class _PosterSignupScreenState extends State<PosterSignupScreen> {
     setState(() {
       _isLoading = true;
     });
-
-    await Future.delayed(const Duration(seconds: 3));
-
-    print("--- Poster Signup Data Submitted ---");
-    print("Full Name: ${_signupData.fullName}");
-    print("Gender: ${_signupData.gender}");
-    print("DOB: ${_signupData.dob}");
-    print("City: ${_signupData.city}");
-    print("Selected Categories: ${_signupData.selectedCategories.join(', ')}");
-    print("Aadhaar: ${_signupData.aadhaarNumber}");
-    print("PAN: ${_signupData.panNumber}");
-    print("------------------------------------");
 
     setState(() {
       _isLoading = false;
@@ -145,7 +131,7 @@ class _PosterSignupScreenState extends State<PosterSignupScreen> {
                   LinearProgressIndicator(
                     value: (_currentStep + 1) / _steps.length,
                     minHeight: 7,
-                    backgroundColor: primaryGreen.withOpacity(0.2),
+                    backgroundColor: primaryGreen.withAlpha(51), // Approx 0.2 opacity
                     valueColor: AlwaysStoppedAnimation<Color>(primaryGreen),
                     borderRadius: BorderRadius.circular(12),
                   ),

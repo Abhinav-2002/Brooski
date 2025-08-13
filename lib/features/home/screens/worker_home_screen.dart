@@ -1,23 +1,37 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
+import 'dart:developer' as dev;
 
-import 'package:brooski_app/core/utils/map_style.dart';
 import 'package:brooski_app/core/utils/marker_generator.dart';
 import 'package:brooski_app/features/home/widgets/price_marker_widget.dart';
 import 'package:brooski_app/features/home/widgets/job_card.dart';
 import 'package:brooski_app/core/models/filter_model.dart';
 import 'package:brooski_app/features/jobs/models/job_model.dart';
 import 'package:brooski_app/features/home/widgets/filter_bottom_sheet.dart';
-import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'dart:math';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:location/location.dart' as loc;
 import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'dart:async';
+
+/// ---------------------------------------------------------------------------
+/// Lightweight logger shim (no external dependency)
+/// ---------------------------------------------------------------------------
+class Logger {
+  final String name;
+  const Logger(this.name);
+  void info(Object? message) => dev.log('$message', name: name, level: 800);
+  void fine(Object? message) => dev.log('$message', name: name, level: 500);
+  void warning(Object? message) => dev.log('$message', name: name, level: 900);
+  void severe(Object? message, [Object? error, StackTrace? stackTrace]) =>
+      dev.log('$message', name: name, error: error, stackTrace: stackTrace, level: 1000);
+}
+
+final _logger = Logger('WorkerHomeScreen');
 
 class WorkerHomeScreen extends StatefulWidget {
   const WorkerHomeScreen({super.key});
@@ -27,8 +41,14 @@ class WorkerHomeScreen extends StatefulWidget {
 }
 
 class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
+  // ----------- NEW: Safe default position & map style -----------
+  static const LatLng _defaultPosition = LatLng(28.6139, 77.2090); // Delhi fallback
+  // If you already have a map style file, you can delete this and use that.
+  static const String _kDefaultMapStyleJson = '[]';
+
   loc.LocationData? _currentLocationData;
   GoogleMapController? _actionMapController;
+
   // UI State
   int _selectedJobIndex = 0;
   String? _selectedJobId;
@@ -38,17 +58,17 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
 
   // Timers and Data
   Timer? _jobRefreshTimer;
-  final String _userName = "Raju";
-  final double _walletBalance = 1250.50;
+  final String _userName = "Raju"; // TODO: Fetch from user profile
+  final double _walletBalance = 1250.50; // TODO: Fetch from user profile
   final List<Job> _availableJobs = [];
   List<Job> _filteredJobs = [];
 
-  // Placeholder for the current worker's skills. In a real app, this would be fetched from a user profile service.
+  // Placeholder for current worker's skills
   final List<String> _workerSkills = ['Plumbing', 'Electrical', 'Painting'];
 
   FilterModel _currentFilters = FilterModel(
     priceRange: const RangeValues(100, 2000),
-    distance: 10.0, // Default to max distance
+    distance: 10.0,
     showUrgentOnly: false,
     mySkillsOnly: false,
     timePosted: 'All',
@@ -59,7 +79,6 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
   // Map and Controllers
   GoogleMapController? _mapController;
   LatLng? _currentPosition;
-  static const LatLng _defaultPosition = LatLng(20.5937, 78.9629); // Default to India
   final Set<Marker> _jobMarkers = {};
   Set<Heatmap> _heatmaps = {};
   final PageController _pageController = PageController(viewportFraction: 0.85);
@@ -71,22 +90,30 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
   final loc.Location _location = loc.Location();
   StreamSubscription<loc.LocationData>? _locationSubscription;
   final Set<Marker> _actionMapMarkers = {};
-  String? _eta;
-  final String _googleApiKey = "AIzaSyDjNA_862a7cFDE8tAoOQSMf4JX3X3YVsg"; // TODO: Replace with your actual API key
+  String? _eta; // TODO: Calculate actual ETA from directions response
+
+  // IMPORTANT: rotate this and move to secure config
+  final String _googleApiKey = "AIzaSyDjNA_862a7cFDE8tAoOQSMf4JX3X3YVsg"; // TODO: Replace & secure
+
+  // Simple cache for marker icons (perf)
+  final Map<String, BitmapDescriptor> _markerCache = {};
 
   @override
   void initState() {
     super.initState();
+
     _pageController.addListener(() {
-      int nextPageIndex = _pageController.page!.round();
-      if (_selectedJobIndex != nextPageIndex) {
+      final p = _pageController.hasClients ? _pageController.page : null;
+      if (p == null) return;
+      final nextPageIndex = p.round();
+      if (_selectedJobIndex != nextPageIndex &&
+          nextPageIndex >= 0 &&
+          nextPageIndex < _filteredJobs.length) {
         setState(() {
           _selectedJobIndex = nextPageIndex;
-          if (nextPageIndex >= 0 && nextPageIndex < _filteredJobs.length) {
-            _selectedJobId = _filteredJobs[nextPageIndex].id;
-            _moveCameraToJob(nextPageIndex);
-          }
+          _selectedJobId = _filteredJobs[nextPageIndex].id;
         });
+        _moveCameraToJob(nextPageIndex);
       }
     });
 
@@ -106,17 +133,17 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
   }
 
   void _startJobRefreshTimer() {
-    print('[TIMER] Attempting to start job refresh timer...');
+    _logger.info('Attempting to start job refresh timer...');
     _jobRefreshTimer?.cancel();
     _jobRefreshTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
-      print('[TIMER] Tick! Firing auto-refresh.');
+      _logger.info('Tick! Firing auto-refresh.');
       _refreshJobs();
     });
-    print('[TIMER] Job refresh timer started successfully.');
+    _logger.info('Job refresh timer started successfully.');
   }
 
   void _cancelJobRefreshTimer() {
-    print('[TIMER] Cancelling job refresh timer.');
+    _logger.info('Cancelling job refresh timer.');
     _jobRefreshTimer?.cancel();
   }
 
@@ -147,25 +174,22 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
 
   Future<void> _refreshJobs() async {
     if (_isMapInteracting || !mounted) {
-      if (_isMapInteracting) print('User is interacting with the map. Skipping refresh.');
+      if (_isMapInteracting) _logger.info('User is interacting with the map. Skipping refresh.');
       return;
     }
-    print('Refreshing jobs quietly in the background...');
-
-    // 1. Get the current state of jobs (simulating a fetch)
+    _logger.info('Refreshing jobs quietly in the background...');
+    // TODO: Implement actual API call to fetch new jobs
     final newJobs = _generateMockJobs(15);
 
-    // 2. Perform a diff to update markers efficiently
     await _updateMarkersWithDiff(newJobs);
 
-    // 3. Update the main job list and re-apply filters
     if (mounted) {
-      _availableJobs.clear();
-      _availableJobs.addAll(newJobs);
+      _availableJobs
+        ..clear()
+        ..addAll(newJobs);
       _applyFilters(_currentFilters);
     }
 
-    // 4. Update the heatmap
     _createHeatmap();
   }
 
@@ -174,17 +198,9 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
       bool serviceEnabled;
       LocationPermission permission;
 
-      // Test if location services are enabled.
       serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        // Location services are not enabled don't continue
-        // accessing the position and request users of the
-        // App to enable the location services.
-        // TODO: Show a user-friendly dialog
-        print('Location services are disabled.');
-        setState(() {
-          _currentPosition = _defaultPosition;
-        });
+        _logger.warning('Location services are disabled.');
         return;
       }
 
@@ -192,61 +208,60 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
-          // Permissions are denied, next time you could try
-          // requesting permissions again (this is also where
-          // Android's shouldShowRequestPermissionRationale
-          // returned true. According to Android guidelines
-          // your App should show an explanatory UI now.
-          // TODO: Show a user-friendly dialog
-          print('Location permissions are denied');
-          setState(() {
-            _currentPosition = _defaultPosition;
-          });
+          _logger.warning('Location permissions are denied.');
           return;
         }
       }
 
       if (permission == LocationPermission.deniedForever) {
-        // Permissions are denied forever, handle appropriately.
-        // TODO: Show a user-friendly dialog
-        print('Location permissions are permanently denied, we cannot request permissions.');
-        setState(() {
-          _currentPosition = _defaultPosition;
-        });
+        _logger.severe('Location permissions are permanently denied, we cannot request permissions.');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permission permanently denied. Enable it in Settings.')),
+          );
+        }
         return;
       }
 
-      // When we reach here, permissions are granted and we can
-      // continue accessing the position of the device.
-      Position position = await Geolocator.getCurrentPosition();
+      final position = await Geolocator.getCurrentPosition();
       setState(() {
         _currentPosition = LatLng(position.latitude, position.longitude);
       });
-      _mapController?.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(target: _currentPosition!, zoom: 14.0),
-        ),
-      );
-    } catch (e) {
-      print('Error determining position: $e');
-      setState(() {
-        _currentPosition = _defaultPosition;
-      });
+      if (_mapController != null && _currentPosition != null) {
+        _mapController!.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(target: _currentPosition!, zoom: 14.0),
+          ),
+        );
+      }
+    } catch (e, stackTrace) {
+      _logger.severe('Error determining position', e, stackTrace);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Couldn’t get location. Please enable GPS.')),
+        );
+      }
     }
   }
 
   List<Job> _generateMockJobs(int jobCount) {
     if (_currentPosition == null) return [];
     final random = Random();
-    print('[MOCK API] Generating a new list of $jobCount jobs.');
+    _logger.info('[MOCK API] Generating a new list of $jobCount jobs.');
     return List.generate(jobCount, (_) => _createRandomJob(random, _currentPosition!));
   }
 
   Job _createRandomJob(Random random, LatLng currentPosition) {
-    final latOffset = (random.nextDouble() - 0.5) * 0.1; // Approx 5km radius
+    final latOffset = (random.nextDouble() - 0.5) * 0.1; // ~5km radius
     final lngOffset = (random.nextDouble() - 0.5) * 0.1;
     final jobLocation = LatLng(currentPosition.latitude + latOffset, currentPosition.longitude + lngOffset);
-    final distance = Geolocator.distanceBetween(currentPosition.latitude, currentPosition.longitude, jobLocation.latitude, jobLocation.longitude) / 1000;
+    final distance = Geolocator.distanceBetween(
+          currentPosition.latitude,
+          currentPosition.longitude,
+          jobLocation.latitude,
+          jobLocation.longitude,
+        ) /
+        1000;
 
     final posterNames = ['Riya Sharma', 'Amit Patel', 'Priya Singh', 'Rohan Gupta'];
     final jobTitles = ['Urgent AC Repair', 'Leaky Kitchen Pipe', 'Fix Faulty Wiring', 'Deep House Cleaning', 'Garden Overhaul', 'Custom Bookshelf'];
@@ -275,45 +290,48 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
     );
   }
 
-  Future<void> _createInitialJobMarkers() async {
-    if (!mounted || _availableJobs.isEmpty) return;
-
-    final List<Widget> markerWidgets = _availableJobs.map((job) {
-      return PriceMarkerWidget(
+  Future<BitmapDescriptor> _getMarkerIcon(Job job) async {
+    final key = '${job.category}_${job.urgency == "Now"}_${(job.pay / 200).floor()}';
+    if (_markerCache.containsKey(key)) return _markerCache[key]!;
+    final widgets = [
+      PriceMarkerWidget(
         price: job.pay.toString(),
         category: job.category,
         isUrgent: job.urgency == 'Now',
-      );
-    }).toList();
+      ),
+    ];
+    final bmp = (await MarkerGenerator(context, widgets).generate()).first;
+    _markerCache[key] = bmp;
+    return bmp;
+  }
+
+  Future<void> _createInitialJobMarkers() async {
+    if (!mounted || _availableJobs.isEmpty) return;
 
     try {
-      final markerBitmaps = await MarkerGenerator(context, markerWidgets).generate();
+      final bitmaps = await Future.wait(_availableJobs.map(_getMarkerIcon));
+      if (!mounted) return;
 
-      if (mounted && markerBitmaps.length == _availableJobs.length) {
-        final newMarkers = <Marker>{};
-        for (int i = 0; i < _availableJobs.length; i++) {
-          final job = _availableJobs[i];
-          newMarkers.add(
-            Marker(
-              markerId: MarkerId(job.id),
-              position: job.location,
-              icon: markerBitmaps[i],
-              anchor: const Offset(0.5, 0.5), // Center the marker on the location
-              onTap: () {
-                _onMarkerTapped(job);
-              },
-            ),
-          );
-        }
-        if (mounted) {
-          setState(() {
-            _jobMarkers.clear();
-            _jobMarkers.addAll(newMarkers);
-          });
-        }
+      final newMarkers = <Marker>{};
+      for (int i = 0; i < _availableJobs.length; i++) {
+        final job = _availableJobs[i];
+        newMarkers.add(
+          Marker(
+            markerId: MarkerId(job.id),
+            position: job.location,
+            icon: bitmaps[i],
+            anchor: const Offset(0.5, 0.5),
+            onTap: () => _onMarkerTapped(job),
+          ),
+        );
       }
-    } catch (e) {
-      print('Error generating markers: $e');
+      setState(() {
+        _jobMarkers
+          ..clear()
+          ..addAll(newMarkers);
+      });
+    } catch (e, stackTrace) {
+      _logger.severe('Error generating markers', e, stackTrace);
     }
   }
 
@@ -326,91 +344,74 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
     final jobsToAdd = newJobs.where((j) => !oldJobIds.contains(j.id)).toList();
     final jobIdsToRemove = oldJobIds.difference(newJobIds);
 
-    // Remove old markers
-    _jobMarkers.removeWhere((m) => jobIdsToRemove.contains(m.markerId.value));
-
-    // Generate and add new markers
+    List<BitmapDescriptor> newMarkerBitmaps = [];
     if (jobsToAdd.isNotEmpty) {
-      final List<Widget> newMarkerWidgets = jobsToAdd.map((job) {
-        return PriceMarkerWidget(
-          price: job.pay.toString(),
-          category: job.category,
-          isUrgent: job.urgency == 'Now',
-        );
-      }).toList();
-
       try {
-        final newMarkerBitmaps = await MarkerGenerator(context, newMarkerWidgets).generate();
-        if (mounted && newMarkerBitmaps.length == jobsToAdd.length) {
-          final newMarkers = <Marker>{};
-          for (int i = 0; i < jobsToAdd.length; i++) {
-            final job = jobsToAdd[i];
-            newMarkers.add(
-              Marker(
-                markerId: MarkerId(job.id),
-                position: job.location,
-                icon: newMarkerBitmaps[i],
-                anchor: const Offset(0.5, 0.5),
-                onTap: () => _onMarkerTapped(job),
-              ),
-            );
-          }
-          if (mounted) {
-            setState(() {
-              _jobMarkers.addAll(newMarkers);
-            });
-          }
-        }
-      } catch (e) {
-        print('Error generating new markers: $e');
+        newMarkerBitmaps = await Future.wait(jobsToAdd.map(_getMarkerIcon));
+      } catch (e, st) {
+        _logger.severe('Error generating new markers', e, st);
+        newMarkerBitmaps = [];
       }
     }
+
+    if (!mounted) return;
+    setState(() {
+      _jobMarkers.removeWhere((m) => jobIdsToRemove.contains(m.markerId.value));
+      if (jobsToAdd.isNotEmpty && newMarkerBitmaps.length == jobsToAdd.length) {
+        for (int i = 0; i < jobsToAdd.length; i++) {
+          final job = jobsToAdd[i];
+          _jobMarkers.add(
+            Marker(
+              markerId: MarkerId(job.id),
+              position: job.location,
+              icon: newMarkerBitmaps[i],
+              anchor: const Offset(0.5, 0.5),
+              onTap: () => _onMarkerTapped(job),
+            ),
+          );
+        }
+      }
+    });
   }
 
   void _createHeatmap() {
-    if (!mounted || _availableJobs.isEmpty) return;
+    if (!mounted) return;
 
-    // --- Intelligent Heatmap Calculation ---
+    if (_filteredJobs.isEmpty) {
+      setState(() => _heatmaps = {});
+      return;
+    }
+
     const double urgencyBonus = 1.5;
     const double highPayBonus = 2.0;
     const double highPayThreshold = 1500;
 
-    // The heatmap should ALWAYS be generated from the filtered list to match the visible markers.
     final List<WeightedLatLng> heatmapData = _filteredJobs.map((job) {
-      double weight = 1.0; // Base weight for every job
-
-      if (job.urgency == 'Now') {
-        weight += urgencyBonus;
-      }
-
-      if (job.pay > highPayThreshold) {
-        weight += highPayBonus;
-      }
-
+      double weight = 1.0;
+      if (job.urgency == 'Now') weight += urgencyBonus;
+      if (job.pay > highPayThreshold) weight += highPayBonus;
       return WeightedLatLng(job.location, weight: weight);
     }).toList();
 
     final heatmap = Heatmap(
       heatmapId: const HeatmapId('job_heatmap'),
       data: heatmapData,
-      radius: HeatmapRadius.fromPixels(40), // Adjusted from 80 to 40 to prevent crash
-      gradient: const HeatmapGradient([
-        HeatmapGradientColor(Colors.blue, 0.2),
+      radius: HeatmapRadius.fromPixels(40),
+      gradient: HeatmapGradient([
+        HeatmapGradientColor(const Color.fromRGBO(0, 0, 255, 0.2), 0.2),
         HeatmapGradientColor(Colors.orange, 0.5),
         HeatmapGradientColor(Colors.red, 0.9),
       ]),
       opacity: 0.8,
     );
 
-    if (mounted) {
-      setState(() {
-        _heatmaps = {heatmap}; // Assign a new set to reliably trigger rebuild
-      });
-    }
+    setState(() {
+      _heatmaps = {heatmap};
+    });
   }
 
   void _onMarkerTapped(Job job) {
-    int jobIndex = _filteredJobs.indexWhere((j) => j.id == job.id);
+    final jobIndex = _filteredJobs.indexWhere((j) => j.id == job.id);
     if (jobIndex != -1) {
       _pageController.animateToPage(
         jobIndex,
@@ -442,7 +443,7 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    print('[BUILD] Building WorkerHomeScreen. _isJobAccepted: $_isJobAccepted');
+    _logger.fine('Building WorkerHomeScreen. _isJobAccepted: $_isJobAccepted');
     return Scaffold(
       appBar: _isJobAccepted ? _buildActionMapAppBar() : _buildDiscoveryAppBar(),
       body: _isJobAccepted ? _buildActionMapView() : (_isMapView ? _buildMapView() : _buildJobListView()),
@@ -452,7 +453,7 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
 
   AppBar _buildActionMapAppBar() {
     return AppBar(
-      automaticallyImplyLeading: false, // We provide a custom action
+      automaticallyImplyLeading: false,
       title: Text(
         _acceptedJob?.title ?? 'En Route',
         style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600),
@@ -489,7 +490,7 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
               '\$${_walletBalance.toStringAsFixed(2)}',
               style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: Colors.black87),
             ),
-            backgroundColor: Colors.green.withOpacity(0.1),
+            backgroundColor: Colors.green.shade50,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           ),
         ),
@@ -505,7 +506,7 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
         IconButton(
           icon: const Icon(Icons.notifications_none),
           onPressed: () {
-            // TODO: Navigate to notifications screen
+            _logger.info('Notifications button pressed.'); // TODO: Navigate to notifications screen
           },
         ),
       ],
@@ -569,7 +570,7 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
         onRefresh: _refreshJobs,
         child: Center(
           child: ListView(
-            shrinkWrap: true, // To make the content centerable
+            shrinkWrap: true,
             children: [
               Icon(Icons.work_off_outlined, size: 60, color: Colors.grey[400]),
               const SizedBox(height: 16),
@@ -600,7 +601,7 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
           return JobCard(
             job: job,
             isSelected: _selectedJobId == job.id,
-            onAccept: _showAcceptJobDialog, // Pass the function reference directly
+            onAccept: _showAcceptJobDialog,
           );
         },
       ),
@@ -610,14 +611,14 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
   Widget _buildMapView() {
     return Stack(
       children: [
-        // Google Map takes the full screen
         _currentPosition == null
             ? const Center(child: CircularProgressIndicator())
             : GoogleMap(
                 initialCameraPosition: CameraPosition(
                   target: _currentPosition ?? _defaultPosition,
-                  zoom: 14,
+                  zoom: 12,
                 ),
+                style: _kDefaultMapStyleJson, // ← replaces deprecated setMapStyle
                 myLocationEnabled: true,
                 myLocationButtonEnabled: false,
                 onCameraMoveStarted: () {
@@ -632,17 +633,14 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
                 },
                 onMapCreated: (GoogleMapController controller) {
                   _mapController = controller;
-                  _mapController!.setMapStyle(mapStyle);
-                  if (_currentPosition != _defaultPosition && _currentPosition != null) {
-                    _centerOnUserLocation(); // Center on user's location on initial load
+                  if (_currentPosition != null) {
+                    _centerOnUserLocation();
                   }
                 },
                 markers: _jobMarkers,
                 heatmaps: _heatmaps,
               ),
-        // Job Card Slider positioned at the bottom
         _buildJobCardSlider(),
-
       ],
     );
   }
@@ -653,7 +651,7 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
       left: 0,
       right: 0,
       child: SizedBox(
-        height: 220, // Adjust height as needed for your JobCard design
+        height: 220,
         child: PageView.builder(
           controller: _pageController,
           itemCount: _filteredJobs.length,
@@ -661,7 +659,7 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
             return JobCard(
               job: _filteredJobs[index],
               isSelected: _selectedJobIndex == index,
-              onAccept: _showAcceptJobDialog, // Pass the function reference directly
+              onAccept: _showAcceptJobDialog,
             );
           },
         ),
@@ -670,12 +668,12 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
   }
 
   void _showAcceptJobDialog(Job job) {
-    print('[DIALOG] Showing accept job dialog for "${job.title}".');
+    _logger.info('Showing accept job dialog for "${job.title}".');
     _cancelJobRefreshTimer(); // Pause background activity
 
     showDialog<bool>(
       context: context,
-      barrierDismissible: false, // Prevent accidental dismissal
+      barrierDismissible: false,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -696,7 +694,7 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
             TextButton(
               child: Text('Cancel', style: GoogleFonts.poppins(color: Colors.grey[600])),
               onPressed: () {
-                Navigator.of(dialogContext).pop(false); // Return false indicating cancellation
+                Navigator.of(dialogContext).pop(false);
               },
             ),
             ElevatedButton(
@@ -709,34 +707,32 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
                 style: GoogleFonts.montserrat(fontWeight: FontWeight.bold, color: Colors.white),
               ),
               onPressed: () {
-                Navigator.of(dialogContext).pop(true); // Return true indicating acceptance
+                Navigator.of(dialogContext).pop(true);
               },
             ),
           ],
         );
       },
     ).then((accepted) {
-      // This block runs after the dialog is closed.
-      // If 'accepted' is null (e.g., dismissed by back button) or false, restart the timer.
       if (accepted == true) {
         _acceptJob(job);
       } else {
-        print('[DIALOG] Job acceptance cancelled or dialog dismissed. Restarting timer.');
-        _startJobRefreshTimer(); // IMPORTANT: Resume background activity if job was not accepted.
+        _logger.info('Job acceptance cancelled or dialog dismissed. Restarting timer.');
+        _startJobRefreshTimer();
       }
     });
   }
 
   void _acceptJob(Job job) {
-    print('[ACCEPT JOB] Starting job acceptance for "${job.title}".');
+    _logger.info('[ACCEPT JOB] Starting job acceptance for "${job.title}".');
     if (!mounted) return;
 
     setState(() {
       _isJobAccepted = true;
       _acceptedJob = job;
-      _jobMarkers.clear(); // Clear discovery markers
-      _heatmaps.clear(); // Clear heatmaps
-      _polylines.clear(); // Clear any previous polylines
+      _jobMarkers.clear();
+      _heatmaps.clear();
+      _polylines.clear();
     });
 
     _createActionMapMarkers();
@@ -745,7 +741,7 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
   }
 
   Widget _buildActionMapView() {
-    print('[BUILD] Building Action Map View.');
+    _logger.fine('Building Action Map View.');
     return Stack(
       children: [
         GoogleMap(
@@ -753,33 +749,17 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
             target: _currentPosition ?? _defaultPosition,
             zoom: 12,
           ),
+          style: _kDefaultMapStyleJson, // ← replaces deprecated setMapStyle
           onMapCreated: (GoogleMapController controller) {
             _actionMapController = controller;
-            _actionMapController!.setMapStyle(mapStyle);
-            // Animate camera to fit the route
-            Future.delayed(const Duration(milliseconds: 400), () {
-              if (_currentPosition != null && _acceptedJob != null) {
-                LatLng southwest = LatLng(
-                  min(_currentPosition!.latitude, _acceptedJob!.location.latitude),
-                  min(_currentPosition!.longitude, _acceptedJob!.location.longitude),
-                );
-                LatLng northeast = LatLng(
-                  max(_currentPosition!.latitude, _acceptedJob!.location.latitude),
-                  max(_currentPosition!.longitude, _acceptedJob!.location.longitude),
-                );
-                _actionMapController!.animateCamera(CameraUpdate.newLatLngBounds(
-                  LatLngBounds(southwest: southwest, northeast: northeast),
-                  100.0, // Padding
-                ));
-              }
-            });
+            // Fit bounds handled after route polyline is set
+            Future.delayed(const Duration(milliseconds: 400), _fitActionBounds);
           },
           markers: _actionMapMarkers,
           polylines: _polylines,
           myLocationButtonEnabled: false,
-          myLocationEnabled: false, // We use a custom marker
+          myLocationEnabled: false, // Using custom marker
           zoomControlsEnabled: false,
-
         ),
         _buildActionCard(),
       ],
@@ -788,9 +768,10 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
 
   Future<void> _launchUrl(String urlString) async {
     final Uri url = Uri.parse(urlString);
-    if (!await launchUrl(url)) {
-      print('Could not launch $urlString');
-      if(mounted) {
+    final ok = await launchUrl(url);
+    if (!ok) {
+      _logger.warning('Could not launch $urlString');
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Could not open $urlString. Please check your device settings.')),
         );
@@ -798,19 +779,11 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
     }
   }
 
-  void _launchCaller(String phoneNumber) async {
-    await _launchUrl('tel:$phoneNumber');
-  }
-
-  void _launchSms(String phoneNumber) async {
-    await _launchUrl('sms:$phoneNumber');
-  }
-
   Widget _buildActionCard() {
     if (_acceptedJob == null) return const SizedBox.shrink();
 
     final poster = _acceptedJob!.poster;
-    final actionColor = const Color(0xFF2ECC71);
+    const actionColor = Color(0xFF2ECC71);
 
     return Positioned(
       bottom: 0,
@@ -825,7 +798,7 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
             borderRadius: BorderRadius.circular(20.0),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.15),
+                color: Colors.black.withValues(alpha: 0.15),
                 blurRadius: 15,
                 offset: const Offset(0, 4),
               )
@@ -863,10 +836,7 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Text(
-                        'ETA',
-                        style: GoogleFonts.poppins(color: Colors.grey[600], fontSize: 12),
-                      ),
+                      Text('ETA', style: GoogleFonts.poppins(color: Colors.grey[600], fontSize: 12)),
                       Text(
                         _eta ?? '- mins',
                         style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 18, color: actionColor),
@@ -886,7 +856,6 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
                     icon: const Icon(Icons.check_circle_outline, size: 18),
                     label: const Text('I\'ve Arrived'),
                     onPressed: () {
-                      // TODO: Implement "I Have Reached" logic
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Arrival notification sent (simulation).')),
                       );
@@ -923,14 +892,14 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
   }
 
   Widget _buildActionButton(IconData icon, String label, VoidCallback onPressed) {
-    final actionColor = const Color(0xFF2ECC71);
+    const actionColor = Color(0xFF2ECC71);
     return OutlinedButton.icon(
       icon: Icon(icon, size: 18),
       label: Text(label),
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
         foregroundColor: actionColor,
-        side: BorderSide(color: actionColor),
+        side: const BorderSide(color: actionColor),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
@@ -970,7 +939,7 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
   }
 
   void _resetToDiscovery() {
-    print('[ACTION MAP] Job cancelled. Resetting to discovery mode.');
+    _logger.info('[ACTION MAP] Job cancelled. Resetting to discovery mode.');
     _locationSubscription?.cancel();
     if (mounted) {
       setState(() {
@@ -981,7 +950,7 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
         _actionMapMarkers.clear();
       });
     }
-    _refreshJobs(); // Immediately fetch jobs to prevent a delay in markers reappearing.
+    _refreshJobs();
     _startJobRefreshTimer();
   }
 
@@ -995,7 +964,7 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
       rotation: _currentLocationData?.heading ?? 0.0,
       anchor: const Offset(0.5, 0.5),
       flat: true,
-      zIndex: 2,
+      zIndexInt: 2, // updated
     );
 
     final jobMarker = Marker(
@@ -1003,99 +972,124 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
       position: _acceptedJob!.location,
       icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
       infoWindow: InfoWindow(title: _acceptedJob!.title, snippet: _acceptedJob!.address),
+      zIndexInt: 1,
     );
 
     if (mounted) {
       setState(() {
-        _actionMapMarkers.clear();
-        _actionMapMarkers.add(workerMarker);
-        _actionMapMarkers.add(jobMarker);
+        _actionMapMarkers
+          ..clear()
+          ..add(workerMarker)
+          ..add(jobMarker);
       });
     }
   }
 
   Future<void> _createRoute() async {
     if (_currentPosition == null || _acceptedJob == null) {
-      print('[ROUTE] Missing current position or accepted job. Cannot create route.');
+      _logger.warning('[ROUTE] Missing current position or accepted job. Cannot create route.');
       return;
     }
 
-    // IMPORTANT: Make sure you have replaced YOUR_GOOGLE_API_KEY with your actual key
     if (_googleApiKey.contains('YOUR_GOOGLE_API_KEY')) {
-        print('[ROUTE] ERROR: Google API Key is still a placeholder. Please replace it.');
-        // Optionally, show a snackbar to the user
+      _logger.severe('[ROUTE] ERROR: Google API Key is still a placeholder. Please replace it in the code.');
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Map feature is not configured. Please contact support.'),
-            backgroundColor: Colors.red,
+          content: Text('Map feature is not configured. Please contact support.'),
+          backgroundColor: Colors.red,
         ));
-        return;
+      }
+      return;
     }
 
-    final String url = 'https://maps.googleapis.com/maps/api/directions/json?origin=${_currentPosition!.latitude},${_currentPosition!.longitude}&destination=${_acceptedJob!.location.latitude},${_acceptedJob!.location.longitude}&key=$_googleApiKey';
-    print('[ROUTE] Requesting route from URL: $url');
+    final String url =
+        'https://maps.googleapis.com/maps/api/directions/json?origin=${_currentPosition!.latitude},${_currentPosition!.longitude}&destination=${_acceptedJob!.location.latitude},${_acceptedJob!.location.longitude}&mode=driving&key=$_googleApiKey';
+    _logger.info('[ROUTE] Requesting route from URL: $url');
 
     try {
       final response = await http.get(Uri.parse(url));
-      print('[ROUTE] Response Status Code: ${response.statusCode}');
-      print('[ROUTE] Response Body: ${response.body}');
 
       if (response.statusCode == 200) {
         final jsonResponse = json.decode(response.body);
-
-        if (jsonResponse['routes'] != null && jsonResponse['routes'].isNotEmpty) {
-          final route = jsonResponse['routes'][0];
-          final polylinePoints = route['overview_polyline']['points'];
-          final leg = route['legs'][0];
-          final duration = leg['duration']['text'];
-
-          final decodedPoints = PolylinePoints().decodePolyline(polylinePoints);
-
-          List<LatLng> polylineCoordinates = [];
-          if (decodedPoints.isNotEmpty) {
-            for (var point in decodedPoints) {
-              polylineCoordinates.add(LatLng(point.latitude, point.longitude));
-            }
-          }
-
-          Polyline polyline = Polyline(
-            polylineId: const PolylineId('route'),
-            color: Colors.blue.withOpacity(0.8),
-            points: polylineCoordinates,
-            width: 6,
-            startCap: Cap.roundCap,
-            endCap: Cap.roundCap,
-          );
-
-          if (mounted) {
-            setState(() {
-              _polylines.clear(); // Clear old routes
-              _polylines.add(polyline);
-              _eta = duration;
-            });
-            print('[ROUTE] Route created successfully with ETA: $duration');
-          }
-        } else {
-          print('[ROUTE] Directions API error: No routes found or error in response. Message: ${jsonResponse['error_message']}');
+        final routes = jsonResponse['routes'] as List?;
+        if (routes == null || routes.isEmpty) {
+          _logger.warning('[ROUTE] Directions API: No routes found. Message: ${jsonResponse['status']} ${jsonResponse['error_message'] ?? ''}');
+          return;
         }
+
+        final first = routes.first as Map;
+        final overview = (first['overview_polyline'] ?? {}) as Map;
+        final polylinePoints = overview['points'] as String?;
+        final legs = first['legs'] as List?;
+        final leg = (legs != null && legs.isNotEmpty) ? legs.first as Map : null;
+        final durationText = (leg?['duration'] as Map?)?['text'] as String?;
+
+        if (polylinePoints == null) {
+          _logger.warning('[ROUTE] No overview polyline points in response.');
+          return;
+        }
+
+        final decodedPoints = PolylinePoints().decodePolyline(polylinePoints);
+        final List<LatLng> polylineCoordinates = [
+          for (final p in decodedPoints) LatLng(p.latitude, p.longitude)
+        ];
+
+        final polyline = Polyline(
+          polylineId: const PolylineId('route'),
+          color: Colors.blue.withValues(alpha: 0.8),
+          points: polylineCoordinates,
+          width: 6,
+          startCap: Cap.roundCap,
+          endCap: Cap.roundCap,
+        );
+
+        if (mounted) {
+          setState(() {
+            _polylines
+              ..clear()
+              ..add(polyline);
+            _eta = durationText;
+          });
+          _fitActionBounds();
+        }
+        _logger.info('[ROUTE] Route created successfully with ETA: ${durationText ?? '-'}');
       } else {
-        print('[ROUTE] Directions API request failed with status code: ${response.statusCode}');
+        _logger.warning('[ROUTE] Directions API request failed with status code: ${response.statusCode}');
       }
-    } catch (e) {
-      print('[ROUTE] Exception caught while creating route: $e');
+    } catch (e, stackTrace) {
+      _logger.severe('[ROUTE] Exception caught while creating route', e, stackTrace);
     }
   }
 
+  void _fitActionBounds() {
+    if (_currentPosition == null || _acceptedJob == null || _actionMapController == null) return;
+    final southwest = LatLng(
+      min(_currentPosition!.latitude, _acceptedJob!.location.latitude),
+      min(_currentPosition!.longitude, _acceptedJob!.location.longitude),
+    );
+    final northeast = LatLng(
+      max(_currentPosition!.latitude, _acceptedJob!.location.latitude),
+      max(_currentPosition!.longitude, _acceptedJob!.location.longitude),
+    );
+    _actionMapController!.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(southwest: southwest, northeast: northeast),
+        100.0,
+      ),
+    );
+  }
+
   void _startLiveLocationUpdates() {
-    print('[LOCATION] Starting live location updates for Action Map.');
+    _logger.info('[LOCATION] Starting live location updates for Action Map.');
     _locationSubscription?.cancel();
-    // Use a high accuracy setting for navigation
     _location.changeSettings(accuracy: loc.LocationAccuracy.high, interval: 2000, distanceFilter: 10);
     _locationSubscription = _location.onLocationChanged.listen((loc.LocationData newLocation) {
       if (mounted && _isJobAccepted) {
-        // Update state with new location data
         _currentLocationData = newLocation;
-        _currentPosition = LatLng(newLocation.latitude!, newLocation.longitude!);
-        _updateWorkerMarkerAndCamera();
+        if (newLocation.latitude != null && newLocation.longitude != null) {
+          _currentPosition = LatLng(newLocation.latitude!, newLocation.longitude!);
+          _updateWorkerMarkerAndCamera();
+        }
       }
     });
   }
@@ -1106,14 +1100,13 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
     final workerMarker = Marker(
       markerId: const MarkerId('worker_location'),
       position: _currentPosition!,
-      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure), // Consider a custom arrow icon
+      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
       rotation: _currentLocationData?.heading ?? 0.0,
       anchor: const Offset(0.5, 0.5),
-      flat: true, // Lays the marker flat on the map for rotation
-      zIndex: 2, // Ensures marker is above the route polyline
+      flat: true,
+      zIndexInt: 2,
     );
 
-    // Efficiently update only the worker's marker
     if (mounted) {
       setState(() {
         _actionMapMarkers.removeWhere((m) => m.markerId.value == 'worker_location');
@@ -1121,61 +1114,56 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
       });
     }
 
-    // Animate camera to follow the worker with a tilted, "in-car" view
     _actionMapController!.animateCamera(
       CameraUpdate.newCameraPosition(
         CameraPosition(
           target: _currentPosition!,
           zoom: 17.5,
           tilt: 45.0,
-          bearing: _currentLocationData?.heading ?? 0.0, // Points the camera in the direction of travel
+          bearing: _currentLocationData?.heading ?? 0.0,
         ),
       ),
     );
   }
 
-  void _applyFilters(FilterModel newFilters, {bool isSilent = false}) {
+  void _applyFilters(FilterModel newFilters) {
     setState(() {
       _currentFilters = newFilters;
       List<Job> tempFilteredJobs = _availableJobs.where((job) {
-        // Price Range Filter
         if (job.pay < newFilters.priceRange.start || job.pay > newFilters.priceRange.end) {
           return false;
         }
 
-        // Distance Filter
         if (job.distance != null && job.distance! > newFilters.distance) {
           return false;
         }
 
-        // Urgency Filter
         if (newFilters.showUrgentOnly && job.urgency.toLowerCase() != 'now') {
           return false;
         }
 
-        // My Skills Only Filter
         if (newFilters.mySkillsOnly && !_workerSkills.contains(job.category)) {
           return false;
         }
 
-        // Category Filter (only if 'My Skills' isn't active)
-        if (!newFilters.mySkillsOnly && newFilters.selectedSubCategories.isNotEmpty && !newFilters.selectedSubCategories.contains(job.category)) {
+        if (!newFilters.mySkillsOnly &&
+            newFilters.selectedSubCategories.isNotEmpty &&
+            !newFilters.selectedSubCategories.contains(job.category)) {
           return false;
         }
 
-        // Time Posted Filter
         final now = DateTime.now();
         if (newFilters.timePosted == 'Last 1 hour' && now.difference(job.postedAt).inHours >= 1) {
           return false;
         }
-        if (newFilters.timePosted == 'Today' && (now.day != job.postedAt.day || now.month != job.postedAt.month || now.year != job.postedAt.year)) {
+        if (newFilters.timePosted == 'Today' &&
+            (now.day != job.postedAt.day || now.month != job.postedAt.month || now.year != job.postedAt.year)) {
           return false;
         }
 
         return true;
       }).toList();
 
-      // Sorting Logic
       switch (newFilters.sortBy) {
         case 'Price (High → Low)':
           tempFilteredJobs.sort((a, b) => b.pay.compareTo(a.pay));
@@ -1188,17 +1176,16 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
           break;
         case 'Recommended':
         default:
-          // TODO: Implement a real recommendation algorithm. For now, no specific sort.
+          // TODO: Implement a real recommendation algorithm.
           break;
       }
 
       _filteredJobs = tempFilteredJobs;
-      // After filtering and sorting, update markers and potentially the selected job
+
+      // After filtering and sorting, update markers and selected job
       _updateMarkersWithDiff(_filteredJobs);
       if (_filteredJobs.isNotEmpty) {
         _pageController.jumpToPage(0);
-      } else {
-        // Handle empty state if needed
       }
     });
   }

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:brooski_app/routes.dart';
-import 'package:brooski_app/features/screens/choose_role/choose_role_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

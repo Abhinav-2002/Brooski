@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 class AuthScreen extends StatefulWidget {
   final String role;
 
-  const AuthScreen({Key? key, required this.role}) : super(key: key);
+  const AuthScreen({super.key, required this.role});
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();

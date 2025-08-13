@@ -1,14 +1,12 @@
 import 'package:brooski_app/features/jobs/models/job_model.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
-import 'dart:ui';
 import 'package:brooski_app/features/poster/screens/poster_profile_screen.dart';
 
 class JobDetailsScreen extends StatelessWidget {
   final Job job;
 
-  const JobDetailsScreen({Key? key, required this.job}) : super(key: key);
+  const JobDetailsScreen({super.key, required this.job});
 
   @override
   Widget build(BuildContext context) {
@@ -209,7 +207,7 @@ class JobDetailsScreen extends StatelessWidget {
                 Chip(
                   label: const Text('Verified'),
                   backgroundColor: primaryGreen.withOpacity(0.1),
-                  labelStyle: TextStyle(color: primaryGreen, fontWeight: FontWeight.bold),
+                  labelStyle: GoogleFonts.lato(color: primaryGreen, fontWeight: FontWeight.bold),
                   padding: EdgeInsets.zero,
                 ),
               const SizedBox(height: 4),

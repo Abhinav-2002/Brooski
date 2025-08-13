@@ -73,8 +73,8 @@ class _PosterSignupStep2State extends State<PosterSignupStep2> {
                     widget.onUpdate(_selectedCategories);
                   });
                 },
-                backgroundColor: isSelected ? primaryGreen.withOpacity(0.2) : Colors.grey[200],
-                selectedColor: primaryGreen.withOpacity(0.3),
+ backgroundColor: isSelected ? primaryGreen.withAlpha(51) : Colors.grey[200], // Approx 0.2 opacity
+ selectedColor: primaryGreen.withAlpha(76), // Approx 0.3 opacity
                 labelStyle: TextStyle(
                   color: isSelected ? primaryGreen : Colors.black,
                   fontWeight: FontWeight.w600,
