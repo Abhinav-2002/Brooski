@@ -1,32 +1,66 @@
 import 'package:flutter/material.dart';
 
-// Enum to represent the status of a job. This provides type-safety and clarity.
-enum JobStatus { accepted, inProgress, completed, canceled }
+enum JobStatus { accepted, inProgress, completed, cancelled }
 
 class Job {
   final String id;
   final String jobTitle;
-  final String posterName;
-  final String posterImageUrl;
+  final String category;
   final IconData serviceIcon;
   final DateTime scheduledDateTime;
   final double price;
-  final JobStatus status;
-  final DateTime? completionDate;
-  final double? workerRating;
-  final double? posterRating;
 
-  Job({
+  // poster
+  final String posterName;
+  final String posterImageUrl;
+  final String? posterPhone; // optional
+
+  // routing
+  /// This can be "lat,lng" or a plain address string.
+  final String? destinationQuery;
+
+  // state
+  final JobStatus status;
+
+  const Job({
     required this.id,
     required this.jobTitle,
-    required this.posterName,
-    required this.posterImageUrl,
+    required this.category,
     required this.serviceIcon,
     required this.scheduledDateTime,
     required this.price,
-    required this.status,
-    this.completionDate,
-    this.workerRating,
-    this.posterRating,
+    required this.posterName,
+    required this.posterImageUrl,
+    this.posterPhone,
+    this.destinationQuery,
+    this.status = JobStatus.accepted,
   });
+
+  Job copyWith({
+    String? id,
+    String? jobTitle,
+    String? category,
+    IconData? serviceIcon,
+    DateTime? scheduledDateTime,
+    double? price,
+    String? posterName,
+    String? posterImageUrl,
+    String? posterPhone,
+    String? destinationQuery,
+    JobStatus? status,
+  }) {
+    return Job(
+      id: id ?? this.id,
+      jobTitle: jobTitle ?? this.jobTitle,
+      category: category ?? this.category,
+      serviceIcon: serviceIcon ?? this.serviceIcon,
+      scheduledDateTime: scheduledDateTime ?? this.scheduledDateTime,
+      price: price ?? this.price,
+      posterName: posterName ?? this.posterName,
+      posterImageUrl: posterImageUrl ?? this.posterImageUrl,
+      posterPhone: posterPhone ?? this.posterPhone,
+      destinationQuery: destinationQuery ?? this.destinationQuery,
+      status: status ?? this.status,
+    );
+  }
 }

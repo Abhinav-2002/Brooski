@@ -17,6 +17,8 @@ import 'package:location/location.dart' as loc;
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:brooski_app/features/jobs/data/worker_jobs_service.dart';
+import 'package:brooski_app/features/jobs/models/worker_assignment.dart';
 
 /// ---------------------------------------------------------------------------
 /// Lightweight logger shim (no external dependency)
@@ -45,6 +47,7 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
   static const LatLng _defaultPosition = LatLng(28.6139, 77.2090); // Delhi fallback
   // If you already have a map style file, you can delete this and use that.
   static const String _kDefaultMapStyleJson = '[]';
+  final WorkerJobsService _jobs = WorkerJobsService.instance;
 
   loc.LocationData? _currentLocationData;
   GoogleMapController? _actionMapController;
@@ -98,39 +101,87 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
   // Simple cache for marker icons (perf)
   final Map<String, BitmapDescriptor> _markerCache = {};
 
-  @override
-  void initState() {
-    super.initState();
+  void _onJobsChanged() {
+  if (!mounted) return;
+  final active = _jobs.active;
+  if (active == null) {
+    if (_isJobAccepted) _resetToDiscovery();
+  } else {
+    _activateFromAssignment(active);
+  }
+}
 
-    _pageController.addListener(() {
-      final p = _pageController.hasClients ? _pageController.page : null;
-      if (p == null) return;
-      final nextPageIndex = p.round();
-      if (_selectedJobIndex != nextPageIndex &&
-          nextPageIndex >= 0 &&
-          nextPageIndex < _filteredJobs.length) {
-        setState(() {
-          _selectedJobIndex = nextPageIndex;
-          _selectedJobId = _filteredJobs[nextPageIndex].id;
-        });
-        _moveCameraToJob(nextPageIndex);
-      }
-    });
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initializeJobs();
-    });
+void _activateFromAssignment(WorkerAssignment a) {
+  // parse "lat,lng" if present
+  LatLng? dest;
+  final q = a.destinationQuery;
+  if (q.contains(',')) {
+    final parts = q.split(',');
+    if (parts.length == 2) {
+      final lat = double.tryParse(parts[0].trim());
+      final lng = double.tryParse(parts[1].trim());
+      if (lat != null && lng != null) dest = LatLng(lat, lng);
+    }
   }
 
-  @override
-  void dispose() {
-    _jobRefreshTimer?.cancel();
-    _pageController.dispose();
-    _mapController?.dispose();
-    _actionMapController?.dispose();
-    _locationSubscription?.cancel();
-    super.dispose();
-  }
+  setState(() {
+    _isJobAccepted = true;
+    _acceptedJob = Job(
+      id: a.jobId,
+      title: a.title,
+      category: a.category,
+      description: 'Accepted job',
+      pay: a.price.toInt(),
+      urgency: 'Now',
+      location: dest ?? (_currentPosition ?? const LatLng(0, 0)),
+      address: a.destinationQuery,
+      postedAt: DateTime.now(),
+      poster: Poster(
+        name: a.posterName,
+        imageUrl: a.posterImageUrl,
+        isVerified: true,
+        rating: 4.5,
+        phoneNumber: a.posterPhone ?? '',
+      ),
+      mediaUrls: const [],
+      distance: null,
+    );
+    _jobMarkers.clear();
+    _heatmaps.clear();
+    _polylines.clear();
+  });
+
+  _createActionMapMarkers();
+  _createRoute();
+  _startLiveLocationUpdates();
+}
+
+
+
+@override
+void initState() {
+  super.initState();
+  // your existing pageController code…
+
+  _jobs.addListener(_onJobsChanged); // 👈 listen to global job state
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    _initializeJobs();
+
+    // Restore Action Mode if there is already an active job
+    final active = _jobs.active;
+    if (active != null) _activateFromAssignment(active);
+  });
+}
+
+@override
+void dispose() {
+  _jobs.removeListener(_onJobsChanged); // 👈 cleanup
+  // your existing dispose code…
+  super.dispose();
+}
+
+
 
   void _startJobRefreshTimer() {
     _logger.info('Attempting to start job refresh timer...');
@@ -721,24 +772,39 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
         _startJobRefreshTimer();
       }
     });
+  } 
+
+void _acceptJob(Job job) {
+  _logger.info('[ACCEPT JOB] "${job.title}"');
+  if (!mounted) return;
+
+  // Enforce: only one active job
+  if (_jobs.hasActive) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('You already have an active job. Complete or cancel it first.')),
+    );
+    return;
   }
 
-  void _acceptJob(Job job) {
-    _logger.info('[ACCEPT JOB] Starting job acceptance for "${job.title}".');
-    if (!mounted) return;
+  final a = _jobs.startActiveFromDiscovery(job);
+  if (a == null) return; // safety
 
-    setState(() {
-      _isJobAccepted = true;
-      _acceptedJob = job;
-      _jobMarkers.clear();
-      _heatmaps.clear();
-      _polylines.clear();
-    });
+  // Switch UI into action map mode (keeps your current visuals)
+  setState(() {
+    _isJobAccepted = true;
+    _acceptedJob = job;
+    _jobMarkers.clear();
+    _heatmaps.clear();
+    _polylines.clear();
+  });
 
-    _createActionMapMarkers();
-    _createRoute();
-    _startLiveLocationUpdates();
-  }
+  _createActionMapMarkers();
+  _createRoute();
+  _startLiveLocationUpdates();
+}
+
+
+
 
   Widget _buildActionMapView() {
     _logger.fine('Building Action Map View.');
@@ -780,116 +846,231 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
   }
 
   Widget _buildActionCard() {
-    if (_acceptedJob == null) return const SizedBox.shrink();
+  if (_acceptedJob == null) return const SizedBox.shrink();
 
-    final poster = _acceptedJob!.poster;
-    const actionColor = Color(0xFF2ECC71);
+  // Read the *authoritative* active assignment.
+  final active = _jobs.active;
+  if (active == null) return const SizedBox.shrink();
 
-    return Positioned(
-      bottom: 0,
-      left: 0,
-      right: 0,
-      child: SafeArea(
-        child: Container(
-          margin: const EdgeInsets.all(12.0),
-          padding: const EdgeInsets.all(16.0),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20.0),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.15),
-                blurRadius: 15,
-                offset: const Offset(0, 4),
-              )
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Row 1: Poster Info & ETA
-              Row(
-                children: [
-                  CircleAvatar(
-                    radius: 24,
-                    backgroundImage: NetworkImage(poster.imageUrl),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          poster.name,
-                          style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.bold),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          _acceptedJob!.title,
-                          style: GoogleFonts.poppins(color: Colors.grey[600], fontSize: 14),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+  final poster = _acceptedJob!.poster;
+  const actionColor = Color(0xFF2ECC71);
+
+  // Decide primary CTA label + handler based on the current phase
+  final WorkerJobPhase phase = active.phase;
+  late final String primaryLabel;
+  late final VoidCallback? primaryOnPressed;
+
+  switch (phase) {
+    case WorkerJobPhase.accepted:
+      primaryLabel = 'Start Travel';
+      primaryOnPressed = () {
+        _jobs.startEnRoute();
+        _toast('Navigation started (en route).');
+      };
+      break;
+
+    case WorkerJobPhase.enRoute:
+      primaryLabel = "I've Arrived";
+      primaryOnPressed = () {
+        _jobs.markArrived();
+        _toast('Marked as arrived.');
+      };
+      break;
+
+    case WorkerJobPhase.arrived:
+      primaryLabel = 'Start Job';
+      primaryOnPressed = () {
+        _jobs.startWorking();
+        _toast('Job started.');
+      };
+      break;
+
+    case WorkerJobPhase.working:
+      primaryLabel = 'Complete Job';
+      primaryOnPressed = () {
+        final active = _jobs.active; // capture before completing
+        if (active == null) return;
+
+        _jobs.completeActive();               // move to completed + clear active
+        _toast('Job completed!');
+
+        // Navigate to Feedback
+        Navigator.of(context).pushNamed(
+          '/feedback',
+          arguments: {
+            'assignmentId': active.id,
+            'jobId': active.jobId,
+            'posterName': active.posterName,
+            'posterImageUrl': active.posterImageUrl,
+          },
+        );
+      };
+      break;
+
+    case WorkerJobPhase.completed:
+    case WorkerJobPhase.cancelled:
+      // Shouldn’t normally be active; disable CTA to be safe.
+      primaryLabel = 'Not Available';
+      primaryOnPressed = null;
+      break;
+  }
+
+  // A friendly status chip text
+  String phaseText() {
+    switch (phase) {
+      case WorkerJobPhase.accepted:  return 'ACCEPTED';
+      case WorkerJobPhase.enRoute:   return 'EN ROUTE';
+      case WorkerJobPhase.arrived:   return 'ARRIVED';
+      case WorkerJobPhase.working:   return 'WORKING';
+      case WorkerJobPhase.completed: return 'COMPLETED';
+      case WorkerJobPhase.cancelled: return 'CANCELLED';
+    }
+  }
+
+  Color phaseColor() {
+    switch (phase) {
+      case WorkerJobPhase.accepted:  return Colors.blue;
+      case WorkerJobPhase.enRoute:   return Colors.indigo;
+      case WorkerJobPhase.arrived:   return Colors.orange;
+      case WorkerJobPhase.working:   return Colors.teal;
+      case WorkerJobPhase.completed: return Colors.green;
+      case WorkerJobPhase.cancelled: return Colors.red;
+    }
+  }
+
+  return Positioned(
+    bottom: 0,
+    left: 0,
+    right: 0,
+    child: SafeArea(
+      child: Container(
+        margin: const EdgeInsets.all(12.0),
+        padding: const EdgeInsets.all(16.0),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20.0),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.15),
+              blurRadius: 15,
+              offset: const Offset(0, 4),
+            )
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Row 1: Poster Info, status chip & ETA
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 24,
+                  backgroundImage: NetworkImage(poster.imageUrl),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('ETA', style: GoogleFonts.poppins(color: Colors.grey[600], fontSize: 12)),
                       Text(
-                        _eta ?? '- mins',
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 18, color: actionColor),
+                        poster.name,
+                        style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.bold),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        _acceptedJob!.title,
+                        style: GoogleFonts.poppins(color: Colors.grey[600], fontSize: 14),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
-                  )
-                ],
-              ),
-              const Divider(height: 24),
-              // Row 2: Action Buttons
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _buildActionButton(Icons.call_outlined, 'Call', () => _launchUrl('tel:${poster.phoneNumber}')),
-                  _buildActionButton(Icons.chat_bubble_outline, 'Chat', () => _launchUrl('sms:${poster.phoneNumber}')),
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.check_circle_outline, size: 18),
-                    label: const Text('I\'ve Arrived'),
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Arrival notification sent (simulation).')),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: actionColor,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              // Row 3: Cancel Button
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.cancel_outlined, size: 18),
-                  label: const Text('Cancel Job'),
-                  onPressed: _showCancelConfirmationDialog,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red[700],
-                    side: BorderSide(color: Colors.red[700]!),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    // Status chip
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: phaseColor().withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: phaseColor().withValues(alpha: 0.7)),
+                      ),
+                      child: Text(
+                        phaseText(),
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: phaseColor(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text('ETA', style: GoogleFonts.poppins(color: Colors.grey[600], fontSize: 12)),
+                    Text(
+                      _eta ?? '- mins',
+                      style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 18, color: actionColor),
+                    ),
+                  ],
+                )
+              ],
+            ),
+
+            const Divider(height: 24),
+
+            // Row 2: Call / Chat / Primary phase CTA
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _buildActionButton(Icons.call_outlined, 'Call', () => _launchUrl('tel:${poster.phoneNumber}')),
+                _buildActionButton(Icons.chat_bubble_outline, 'Chat', () => _launchUrl('sms:${poster.phoneNumber}')),
+                ElevatedButton.icon(
+                  icon: Icon(
+                    phase == WorkerJobPhase.working ? Icons.check_circle_outline : Icons.navigation_outlined,
+                    size: 18,
+                  ),
+                  label: Text(primaryLabel),
+                  onPressed: primaryOnPressed,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: actionColor,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 10),
+
+            // Row 3: Cancel Job
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.cancel_outlined, size: 18),
+                label: const Text('Cancel Job'),
+                onPressed: _showCancelConfirmationDialog,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.red[700],
+                  side: BorderSide(color: Colors.red[700]!),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
+
+// Small helper
+void _toast(String msg) {
+  if (!mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+}
+
 
   Widget _buildActionButton(IconData icon, String label, VoidCallback onPressed) {
     const actionColor = Color(0xFF2ECC71);
@@ -905,38 +1086,41 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
     );
   }
 
-  void _showCancelConfirmationDialog() {
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Text('Cancel Job?', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-          content: Text(
-            'Cancelling a job after acceptance may negatively affect your rating and eligibility for rewards. Are you sure you want to proceed?',
-            style: GoogleFonts.lato(fontSize: 15),
+ void _showCancelConfirmationDialog() {
+  showDialog(
+    context: context,
+    builder: (BuildContext dialogContext) {
+      return AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Cancel Job?', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        content: Text(
+          'Cancelling a job after acceptance may negatively affect your rating and eligibility for rewards. Are you sure you want to proceed?',
+          style: GoogleFonts.lato(fontSize: 15),
+        ),
+        actions: <Widget>[
+          TextButton(
+            child: Text('Go Back', style: GoogleFonts.montserrat()),
+            onPressed: () => Navigator.of(dialogContext).pop(),
           ),
-          actions: <Widget>[
-            TextButton(
-              child: Text('Go Back', style: GoogleFonts.montserrat()),
-              onPressed: () => Navigator.of(dialogContext).pop(),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              child: Text('Confirm Cancellation', style: GoogleFonts.montserrat(fontWeight: FontWeight.bold, color: Colors.white)),
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                _resetToDiscovery();
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
+            child: Text('Confirm Cancellation', style: GoogleFonts.montserrat(fontWeight: FontWeight.bold, color: Colors.white)),
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              // IMPORTANT: clear global active and switch back to discovery
+              _jobs.cancelActive();
+              _resetToDiscovery();
+            },
+          ),
+        ],
+      );
+    },
+  );
+}
+
 
   void _resetToDiscovery() {
     _logger.info('[ACTION MAP] Job cancelled. Resetting to discovery mode.');
@@ -952,6 +1136,8 @@ class _WorkerHomeScreenState extends State<WorkerHomeScreen> {
     }
     _refreshJobs();
     _startJobRefreshTimer();
+    // also clear the global active job
+    _jobs.cancelActive();
   }
 
   void _createActionMapMarkers() {

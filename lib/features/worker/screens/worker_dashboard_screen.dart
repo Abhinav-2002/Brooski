@@ -1,75 +1,78 @@
-import 'package:brooski_app/features/chat/screens/chat_list_screen.dart';
-import 'package:brooski_app/features/home/screens/worker_home_screen.dart';
-import 'package:brooski_app/features/jobs/screens/my_jobs_screen.dart';
-import 'package:brooski_app/features/profile/screens/worker_profile_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+// Tabs (use your existing screens; these names match your project)
+import 'package:brooski_app/features/home/screens/worker_home_screen.dart';
+import 'package:brooski_app/features/chat/screens/chat_list_screen.dart';
+import 'package:brooski_app/features/jobs/screens/my_jobs_screen.dart';
+import 'package:brooski_app/features/worker/screens/worker_profile_screen.dart';
 
 class WorkerDashboardScreen extends StatefulWidget {
-  const WorkerDashboardScreen({super.key});
+  const WorkerDashboardScreen({super.key, this.initialIndex = 0});
+
+  /// Which tab to show first: 0=Home, 1=Chat, 2=My Jobs, 3=Profile
+  final int initialIndex;
 
   @override
   State<WorkerDashboardScreen> createState() => _WorkerDashboardScreenState();
 }
 
 class _WorkerDashboardScreenState extends State<WorkerDashboardScreen> {
-  int _selectedIndex = 0;
+  static const _bg = Color(0xFFF7FAF7);
+  static const _active = Color(0xFF2ECC71);
 
-  final List<Widget> _screens = [
-    const WorkerHomeScreen(),
-    const ChatListScreen(),
-    const MyJobsScreen(),
-    const WorkerProfileScreen(),
+  late int _index;
+
+  final _pages = const <Widget>[
+    WorkerHomeScreen(),  
+    ChatListScreen(),
+    MyJobsScreen(),
+    WorkerProfileScreen(),
   ];
 
   @override
   void initState() {
     super.initState();
-    print("WorkerDashboardScreen has been loaded.");
-  }
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
+    _index = (widget.initialIndex >= 0 && widget.initialIndex < _pages.length)
+        ? widget.initialIndex
+        : 0;
   }
 
   @override
   Widget build(BuildContext context) {
-    final Color primaryGreen = const Color(0xFF2ECC71);
-
     return Scaffold(
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _screens,
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: primaryGreen,
-        unselectedItemColor: Colors.grey[600],
-        selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
-        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_filled),
+      backgroundColor: _bg,
+      body: _pages[_index],
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _index,
+        onDestinationSelected: (i) => setState(() => _index = i),
+        backgroundColor: _bg,
+        elevation: 0,
+        indicatorColor: _active.withOpacity(0.15),
+        labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
+        destinations: [
+          NavigationDestination(
+            icon: const Icon(Icons.home_outlined),
+            selectedIcon: const Icon(Icons.home_rounded, color: _active),
             label: 'Home',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.chat_bubble_outline_rounded),
+          NavigationDestination(
+            icon: const Icon(Icons.chat_bubble_outline),
+            selectedIcon: const Icon(Icons.chat_bubble, color: _active),
             label: 'Chat',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.assignment_outlined),
+          NavigationDestination(
+            icon: const Icon(Icons.assignment_outlined),
+            selectedIcon: const Icon(Icons.assignment, color: _active),
             label: 'My Jobs',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
+          NavigationDestination(
+            icon: const Icon(Icons.person_outline),
+            selectedIcon: const Icon(Icons.person, color: _active),
             label: 'Profile',
           ),
         ],
       ),
-      // The SOS button will be handled separately, likely overlaid or in the AppBar
     );
   }
 }
